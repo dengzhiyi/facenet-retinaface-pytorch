@@ -3,23 +3,39 @@
 #   将单张图片预测、摄像头检测和FPS测试功能
 #   整合到了一个py文件中，通过指定mode进行模式的修改。
 #----------------------------------------------------#
+import os
 import time
+import argparse
 
 import cv2
 import numpy as np
 
 from retinaface import Retinaface
 
-if __name__ == "__main__":
-    retinaface = Retinaface()
+def encode_face(obj):
+    list_dir = os.listdir("face_dataset")
+    image_paths = []
+    names = []
+    for name in list_dir:
+        image_paths.append("face_dataset/"+name)
+
+        name = os.path.splitext(name)[0]
+        names.append(name.split("_")[0])
+
+    obj.encode_face_dataset(image_paths,names)
+    
+
+def main(args):
+    global os
+    retinaface = Retinaface(1)
     #----------------------------------------------------------------------------------------------------------#
     #   mode用于指定测试的模式：
-    #   'predict'表示单张图片预测，如果想对预测过程进行修改，如保存图片，截取对象等，可以先看下方详细的注释
+    #   'image'表示单张图片预测，如果想对预测过程进行修改，如保存图片，截取对象等，可以先看下方详细的注释
     #   'video'表示视频检测，可调用摄像头或者视频进行检测，详情查看下方注释。
     #   'fps'表示测试fps，使用的图片是img里面的street.jpg，详情查看下方注释。
     #   'dir_predict'表示遍历文件夹进行检测并保存。默认遍历img文件夹，保存img_out文件夹，详情查看下方注释。
     #----------------------------------------------------------------------------------------------------------#
-    mode = "predict"
+    mode = args.mode # "image"
     #----------------------------------------------------------------------------------------------------------#
     #   video_path用于指定视频的路径，当video_path=0时表示检测摄像头
     #   想要检测视频，则设置如video_path = "xxx.mp4"即可，代表读取出根目录下的xxx.mp4文件。
@@ -29,7 +45,7 @@ if __name__ == "__main__":
     #   video_path、video_save_path和video_fps仅在mode='video'时有效
     #   保存视频时需要ctrl+c退出或者运行到最后一帧才会完成完整的保存步骤。
     #----------------------------------------------------------------------------------------------------------#
-    video_path      = 0
+    video_path      = args.video_path
     video_save_path = ""
     video_fps       = 25.0
     #-------------------------------------------------------------------------#
@@ -42,10 +58,10 @@ if __name__ == "__main__":
     #   dir_save_path指定了检测完图片的保存路径
     #   dir_origin_path和dir_save_path仅在mode='dir_predict'时有效
     #-------------------------------------------------------------------------#
-    dir_origin_path = "img/"
+    dir_origin_path = args.imgs_dir     # "img/"
     dir_save_path   = "img_out/"
 
-    if mode == "predict":
+    if mode == "image":
         '''
         predict.py有几个注意点
         1、无法进行批量预测，如果想要批量预测，可以利用os.listdir()遍历文件夹，利用cv2.imread打开图片文件进行预测。
@@ -55,7 +71,10 @@ if __name__ == "__main__":
         5、在更换facenet网络后一定要重新进行人脸编码，运行encoding.py。
         '''
         while True:
-            img = input('Input image filename:')
+            img_name = input('\nInput image filename: ')
+            img = os.path.join(dir_origin_path, img_name)
+            print('Detect image:', img)
+
             image = cv2.imread(img)
             if image is None:
                 print('Open Error! Try again!')
@@ -64,9 +83,14 @@ if __name__ == "__main__":
                 image   = cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
                 r_image = retinaface.detect_image(image)
                 r_image = cv2.cvtColor(r_image,cv2.COLOR_RGB2BGR)
-                cv2.imshow("after",r_image)
-                cv2.waitKey(0)
-
+                cv2.imshow("image", r_image)
+                key = cv2.waitKey(0)
+                if key == 27: # Esc
+                    cv2.destroyAllWindows()
+                    break; # quit()
+                elif key == ord('q'):
+                    cv2.destroyWindow("image")
+                
     elif mode == "video":
         capture = cv2.VideoCapture(video_path)
         if video_save_path!="":
@@ -78,6 +102,9 @@ if __name__ == "__main__":
         if not ref:
             raise ValueError("未能正确读取摄像头（视频），请注意是否正确安装摄像头（是否正确填写视频路径）。")
 
+        shot = 0
+        count = 0
+        t0 = time.time()
         fps = 0.0
         while(True):
             t1 = time.time()
@@ -91,19 +118,38 @@ if __name__ == "__main__":
             frame = np.array(retinaface.detect_image(frame))
             # RGBtoBGR满足opencv显示格式
             frame = cv2.cvtColor(frame,cv2.COLOR_RGB2BGR)
-                    
-            fps  = ( fps + (1./(time.time()-t1)) ) / 2
-            print("fps= %.2f"%(fps))
-            frame = cv2.putText(frame, "fps= %.2f"%(fps), (0, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             
+            count += 1
+            index = 100     # 每100帧计算一次FPS
+            if count % index == 0:
+                t1 = time.time()
+                fps = index / (t1 - t0)
+                t0 = t1
+            
+            frame = cv2.putText(frame, "%.1f fps"%(fps), (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
+                
             cv2.imshow("video",frame)
-            c= cv2.waitKey(1) & 0xff 
+
             if video_save_path!="":
                 out.write(frame)
 
-            if c==27:
+            key = cv2.waitKey(1) & 0xff 
+            if key == ord('s'):
+                cv2.destroyWindow('video')
+                frame = cv2.putText(frame, "If record face? (y or n)", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 0, 0), 2)
+                cv2.imshow('shot', frame)
+                c = cv2.waitKey()
+                if c == ord('y'):
+                    shot = shot + 1
+                    cv2.imwrite("./face_dataset/capture-{:d}.jpg".format(shot), frame)
+                    encode_face(retinaface)
+                cv2.destroyWindow('shot')
+                count = 0
+                t0 = time.time()
+            elif key == 27: # Esc
                 capture.release()
                 break
+
         print("Video Detection Done!")
         capture.release()
         if video_save_path!="":
@@ -134,3 +180,18 @@ if __name__ == "__main__":
                 cv2.imwrite(os.path.join(dir_save_path, img_name), r_image)
     else:
         raise AssertionError("Please specify the correct mode: 'predict', 'video', 'fps' or 'dir_predict'.")
+
+
+'''
+    Usage:
+        python predict.py
+        python predict.py --mode video
+'''
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mode", default="image", help="predict mode")
+    parser.add_argument("--imgs-dir", default="./img", help="images dir")
+    parser.add_argument("--video-path", default=0, help="video path")
+
+    args = parser.parse_args()
+    main(args)

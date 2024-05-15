@@ -221,6 +221,7 @@ class Retinaface(object):
 
                 if len(boxes_conf_landms) <= 0:
                     print(names[index], "：未检测到人脸")
+                    del(names[index])
                     continue
                 #---------------------------------------------------------#
                 #   如果使用了letterbox_image的话，要把灰条的部分去除掉。
@@ -266,6 +267,12 @@ class Retinaface(object):
 
                 face_encoding = self.facenet(crop_img)[0].cpu().numpy()
                 face_encodings.append(face_encoding)
+
+        print(np.array(face_encodings).shape)
+        print(names)
+
+        self.known_face_encodings = face_encodings
+        self.known_face_names     = names
 
         np.save("model_data/{backbone}_face_encoding.npy".format(backbone=self.facenet_backbone),face_encodings)
         np.save("model_data/{backbone}_names.npy".format(backbone=self.facenet_backbone),names)
@@ -349,6 +356,8 @@ class Retinaface(object):
             #---------------------------------------------------#
             if len(boxes_conf_landms) <= 0:
                 return old_image
+            
+            print('\nDetected faces:', len(boxes_conf_landms))
 
             #---------------------------------------------------------#
             #   如果使用了letterbox_image的话，要把灰条的部分去除掉。
@@ -405,6 +414,8 @@ class Retinaface(object):
             #   取出一张脸并与数据库中所有的人脸进行对比，计算得分
             #-----------------------------------------------------#
             matches, face_distances = compare_faces(self.known_face_encodings, face_encoding, tolerance = self.facenet_threhold)
+            # print(matches, face_distances)
+            # print(self.known_face_names)
             name = "Unknown"
             #-----------------------------------------------------#
             #   取出这个最近人脸的评分
@@ -424,20 +435,29 @@ class Retinaface(object):
             #---------------------------------------------------#
             #   b[0]-b[3]为人脸框的坐标，b[4]为得分
             #---------------------------------------------------#
-            cv2.rectangle(old_image, (b[0], b[1]), (b[2], b[3]), (0, 0, 255), 2)
+
+            # 未识别的人脸，不画框
+            # if face_names[i] == "Unknown":
+            #     continue
+
+            # 做一次赋值操作，否则画多个人脸框时会报错：img marked as output argument, but provided NumPy array marked as readonly        
+            old_image = np.array(old_image)
+
+            color = (0, 0, 255) if face_names[i] == "Unknown" else (255, 0, 0)
+            cv2.rectangle(old_image, (b[0], b[1]), (b[2], b[3]), color, 2)
             cx = b[0]
             cy = b[1] + 12
-            cv2.putText(old_image, text, (cx, cy),
-                        cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
+            # cv2.putText(old_image, text, (cx, cy),
+            #             cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255))
 
             #---------------------------------------------------#
             #   b[5]-b[14]为人脸关键点的坐标
             #---------------------------------------------------#
-            cv2.circle(old_image, (b[5], b[6]), 1, (0, 0, 255), 4)
-            cv2.circle(old_image, (b[7], b[8]), 1, (0, 255, 255), 4)
-            cv2.circle(old_image, (b[9], b[10]), 1, (255, 0, 255), 4)
-            cv2.circle(old_image, (b[11], b[12]), 1, (0, 255, 0), 4)
-            cv2.circle(old_image, (b[13], b[14]), 1, (255, 0, 0), 4)
+            # cv2.circle(old_image, (b[5], b[6]), 1, (0, 0, 255), 4)
+            # cv2.circle(old_image, (b[7], b[8]), 1, (0, 255, 255), 4)
+            # cv2.circle(old_image, (b[9], b[10]), 1, (255, 0, 255), 4)
+            # cv2.circle(old_image, (b[11], b[12]), 1, (0, 255, 0), 4)
+            # cv2.circle(old_image, (b[13], b[14]), 1, (255, 0, 0), 4)
             
             name = face_names[i]
             # font = cv2.FONT_HERSHEY_SIMPLEX
@@ -447,6 +467,7 @@ class Retinaface(object):
             #   如果不是必须，可以换成cv2只显示英文。
             #--------------------------------------------------------------#
             old_image = cv2ImgAddText(old_image, name, b[0]+5 , b[3] - 25)
+            print('Known face {}: {}'.format(i + 1, name))
         return old_image
 
     def get_FPS(self, image, test_interval):
